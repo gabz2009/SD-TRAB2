@@ -1,46 +1,71 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.IO;
-using System.Windows;
-using System.Windows.Media;
+using System.Collections.Generic;
+using Microsoft.Data.Sqlite;
 
 namespace Server
 {
-    public partial class server : Window
+    class ServerApp
     {
-        private TcpListener _server;
-        private bool _isRunning;
-        private Thread _listenerThread;
+        private static TcpListener _server;
+        private static bool _isRunning;
 
-        // PONTO 4: Mutex para ficheiro no Servidor
+        // Mutex para evitar acessos concorrentes simultâneos pesados à BD
         private static Mutex _serverLogMutex = new Mutex();
-        private static string _logPath = "log_servidor.txt";
+        private static string _connectionString = "Data Source=servidor.db";
 
-        public MainWindow()
+        static void Main(string[] args)
         {
-            InitializeComponent();
-        }
+            Console.Title = "SERVIDOR PRINCIPAL";
 
-        private void btnStart_Click(object sender, RoutedEventArgs e)
-        {
+            InitializeDatabase();
+
             _server = new TcpListener(IPAddress.Any, 5000);
             _server.Start();
             _isRunning = true;
 
-            LogToUI("Servidor online (Porta 5000)");
+            Console.WriteLine("[START] Servidor online (Porta 5000) - SQLite Iniciado");
 
-            // PONTO 4: Atendimento Concorrente com Thread principal
-            _listenerThread = new Thread(AcceptClients);
-            _listenerThread.IsBackground = true;
-            _listenerThread.Start();
-            AtualizarEstadoUI(true);
+            // Atendimento Concorrente com Thread principal
+            Thread listenerThread = new Thread(AcceptClients);
+            listenerThread.IsBackground = true;
+            listenerThread.Start();
+
+            Console.WriteLine("Pressione Enter para encerrar o servidor...");
+            Console.ReadLine();
+
+            _isRunning = false;
+            _server.Stop();
+            Console.WriteLine("[STOP] Servidor offline");
         }
 
-        // Nova função síncrona para correr na Thread principal
-        private void AcceptClients()
+        private static void InitializeDatabase()
+        {
+            using (var connection = new SqliteConnection(_connectionString))
+            {
+                connection.Open();
+                string createTableQuery = @"
+                    CREATE TABLE IF NOT EXISTS SensorData (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        GatewayId TEXT,
+                        SensorId TEXT,
+                        Zone TEXT,
+                        DataType TEXT,
+                        DataValue REAL,
+                        Timestamp TEXT
+                    )";
+                using (var command = new SqliteCommand(createTableQuery, connection))
+                {
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private static void AcceptClients()
         {
             while (_isRunning)
             {
@@ -48,7 +73,7 @@ namespace Server
                 {
                     TcpClient client = _server.AcceptTcpClient();
 
-                    // PONTO 4: Nova Thread para cada Gateway que se ligue
+                    // Nova Thread para cada Gateway que se ligue
                     Thread clientThread = new Thread(() => HandleClientData(client));
                     clientThread.IsBackground = true;
                     clientThread.Start();
@@ -60,12 +85,12 @@ namespace Server
             }
         }
 
-        private void HandleClientData(TcpClient client)
+        private static void HandleClientData(TcpClient client)
         {
             using (client)
             using (NetworkStream stream = client.GetStream())
             {
-                byte[] buffer = new byte[1024];
+                byte[] buffer = new byte[4096];
                 while (_isRunning)
                 {
                     try
@@ -75,106 +100,87 @@ namespace Server
                         if (bytesRead == 0) break;
 
                         string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        LogToUI($"Recebido do Gateway: {message}");
-                        ArmazenarDadosPorTipo(message);
-
-                        // Guardar num ficheiro para demonstrar o Mutex no Servidor
-                        GuardarLogServidor($"[{DateTime.Now:HH:mm:ss}] {message}");
+                        
+                        // Log na consola
+                        LogToConsole($"Recebido:\n{message}");
+                        
+                        ProcessarEGuardarMensagem(message);
                     }
                     catch { break; }
                 }
             }
         }
 
-        // PONTO 4: Função com Mutex no Servidor
-        private void GuardarLogServidor(string mensagem)
-        {
-            _serverLogMutex.WaitOne();
-            try
-            {
-                File.AppendAllText(_logPath, mensagem + Environment.NewLine);
-            }
-            catch (Exception ex)
-            {
-                LogToUI($"Erro ao guardar log: {ex.Message}");
-            }
-            finally
-            {
-                _serverLogMutex.ReleaseMutex();
-                AtualizarEstadoUI(false);
-            }
-        }
-
-        private void LogToUI(string message)
-        {
-            Dispatcher.Invoke(() => {
-                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-                txtLog.ScrollToEnd();
-            });
-        }
-
-        private void btnStop_Click(object sender, RoutedEventArgs e)
-        {
-            _isRunning = false;
-            _server.Stop();
-            LogToUI("Servidor offline");
-            AtualizarEstadoUI(false);
-        }
-
-        private void AtualizarEstadoUI(bool online)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                if (online)
-                {
-                    lblStatus.Text = "Online";
-                    lblStatus.Foreground = Brushes.Green;
-                    
-                }
-                else
-                {
-                    lblStatus.Text = "Offline";
-                    lblStatus.Foreground = Brushes.Red; 
-                }
-            });
-        }
-
-        private static void ArmazenarDadosPorTipo(string msg)
+        private static void ProcessarEGuardarMensagem(string msg)
         {
             // Divide a mensagem em linhas (ignora linhas vazias)
             var linhas = msg.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var linha in linhas)
             {
-                var campos = linha.Split('|', StringSplitOptions.TrimEntries);
-                string tipo = null;
-                List<string> partesFiltradas = new();
+                var campos = linha.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                string gtwId = "", sensorId = "", zone = "", type = "", timestamp = "";
+                double val = 0.0;
 
                 foreach (var campo in campos)
                 {
-                    if (campo.StartsWith("TYPE:", StringComparison.OrdinalIgnoreCase))
+                    var c = campo.Trim();
+                    if (c.StartsWith("GTW_ID:")) gtwId = c.Substring(7).Trim();
+                    else if (c.StartsWith("ID:")) sensorId = c.Substring(3).Trim();
+                    else if (c.StartsWith("ZONE:")) zone = c.Substring(5).Trim();
+                    else if (c.StartsWith("TYPE:")) type = c.Substring(5).Trim();
+                    else if (c.StartsWith("VAL:"))
                     {
-                        tipo = campo.Substring(5).ToUpperInvariant();
-                        continue; // Não incluir TYPE na linha final
+                        string valStr = c.Substring(4).Trim().Replace(",", ".");
+                        double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val);
                     }
-                    partesFiltradas.Add(campo.Trim());
+                    else if (c.StartsWith("TS:")) timestamp = c.Substring(3).Trim();
                 }
 
-                if (string.IsNullOrEmpty(tipo))
-                    continue; // Ignora linhas sem TYPE
-
-                string nomeFicheiro = $"{char.ToUpper(tipo[0])}{tipo[1..].ToLower()}.txt";
-                string linhaFinal = string.Join(" | ", partesFiltradas);
-
-                try
+                if (!string.IsNullOrEmpty(sensorId) && !string.IsNullOrEmpty(type))
                 {
-                    File.AppendAllText(nomeFicheiro, linhaFinal + Environment.NewLine);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERRO] Ao guardar a mensagem: {ex.Message}");
+                    GuardarNaBaseDeDados(gtwId, sensorId, zone, type, val, timestamp);
                 }
             }
+        }
+
+        private static void GuardarNaBaseDeDados(string gtwId, string sensorId, string zone, string type, double val, string timestamp)
+        {
+            _serverLogMutex.WaitOne();
+            try
+            {
+                using (var connection = new SqliteConnection(_connectionString))
+                {
+                    connection.Open();
+                    string insertQuery = @"
+                        INSERT INTO SensorData (GatewayId, SensorId, Zone, DataType, DataValue, Timestamp)
+                        VALUES (@GatewayId, @SensorId, @Zone, @DataType, @DataValue, @Timestamp)";
+                    
+                    using (var command = new SqliteCommand(insertQuery, connection))
+                    {
+                        command.Parameters.AddWithValue("@GatewayId", gtwId);
+                        command.Parameters.AddWithValue("@SensorId", sensorId);
+                        command.Parameters.AddWithValue("@Zone", zone);
+                        command.Parameters.AddWithValue("@DataType", type);
+                        command.Parameters.AddWithValue("@DataValue", val);
+                        command.Parameters.AddWithValue("@Timestamp", timestamp);
+                        command.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERRO DB] Falha ao guardar registo: {ex.Message}");
+            }
+            finally
+            {
+                _serverLogMutex.ReleaseMutex();
+            }
+        }
+
+        private static void LogToConsole(string message)
+        {
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
         }
     }
 }

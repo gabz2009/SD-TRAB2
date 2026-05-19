@@ -109,10 +109,10 @@ namespace Gateway
                 {
                     if (linhas[i].StartsWith(sensorId + ":"))
                     {
-                        var partes = linhas[i].Split(':');
-                        if (partes.Length >= 5)
+                        var partes = linhas[i].Split(new[] { ':' }, 5);
+                        if (partes.Length == 5)
                         {
-                            partes[4] = DateTime.Now.ToString("o");
+                            partes[4] = DateTime.Now.ToString("s"); // Formato ISO 8601 sem timezone para consistência
                             linhas[i] = string.Join(":", partes);
                             break;
                         }
@@ -123,7 +123,10 @@ namespace Gateway
                     File.WriteAllLines(ConfigPath, linhas);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERRO] Falha ao atualizar last_sync: {ex.Message}");
+            }
         }
     }
 
