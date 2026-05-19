@@ -1,226 +1,84 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Gateway
 {
-    class gateway
+    class GatewayApp
     {
-        private static TcpListener _sensorListener;
-        private static TcpClient _serverClient;
-        private static NetworkStream _serverStream;
+        // Configuração de sensores
+        public static Dictionary<string, string[]> SensorDataTypes = new Dictionary<string, string[]>();
+        public static Dictionary<string, string> SensorStatus = new Dictionary<string, string>();
+        public static Dictionary<string, string> SensorZone = new Dictionary<string, string>();
+        public static string ConfigPath = "sensores_config.csv";
+        public static readonly object CsvLock = new object();
 
-        // Configuração de sensores (lida do ficheiro CSV)
-        private static Dictionary<string, string[]> _sensorDataTypes = new Dictionary<string, string[]>();
-        private static Dictionary<string, string> _sensorStatus = new Dictionary<string, string>();
-        private static Dictionary<string, string> _sensorZone = new Dictionary<string, string>();
-        private static string _configPath = "sensores_config.csv";
-        private static readonly object _csvLock = new object();
-
-        // Envio de Mensagens em Pilha
-        private static readonly Queue<string> _serverMessage = new Queue<string>();
-        private static readonly object _queueLock = new object();
-        private static Timer _BatchTimer;
-
-        // O Main perde o 'async Task' para focar no uso clássico exigido
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Console.Title = "GATEWAY";
-
-            // Carregar configuração de sensores do CSV
+            Console.Title = "GERENCIADOR DE GATEWAYS";
             CarregarConfiguracaoSensores();
 
-            while (_serverClient == null || !_serverClient.Connected)
+            Console.WriteLine("Insira o ID do Gateway e os tipos de dados a subscrever (Ex: 102 TEMP,HUM), ou 'sair' para terminar:");
+
+            while (true)
             {
-                try
+                string input = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(input)) continue;
+                if (input.ToLower() == "sair") break;
+
+                var parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2)
                 {
-                    Console.WriteLine("A tentar ligar ao Servidor Central (Porta 5000)...");
-                    _serverClient = new TcpClient("127.0.0.1", 5000);
-                    _serverStream = _serverClient.GetStream();
-                    Console.WriteLine("[OK] Ligado ao Servidor Central com sucesso!");
-                    _BatchTimer = new Timer(_ => EnviarBatchParaServidor(), null, 0, 10000); //10 segundos
-                }
-                catch (SocketException)
-                {
-                    Console.WriteLine("[!] Servidor não responde. Reententando em 3 segundos...");
-                    Thread.Sleep(3000); // Usamos Thread.Sleep em vez de Task.Delay
-                }
-            }
-            
+                    string id = "GTW" + parts[0];
+                    string[] types = parts[1].Split(',').Select(t => t.Trim().ToUpper()).ToArray();
 
-            try
-            {
-                _sensorListener = new TcpListener(IPAddress.Any, 6000);
-                _sensorListener.Start();
-                Console.WriteLine("[OK] Gateway à espera de sensores na porta 6000...");
-
-                while (true)
-                {
-                    // Aceitação síncrona (A thread principal bloqueia aqui até chegar um sensor)
-                    TcpClient sensor = _sensorListener.AcceptTcpClient();
-
-                    // PONTO 4: Atendimento Concorrente usando Threads clássicas
-                    Thread clientThread = new Thread(() => HandleSensor(sensor));
-                    clientThread.IsBackground = true;
-                    clientThread.Start();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERRO NO LISTENER] {ex.Message}");
-            }
-        }
-
-        private static void HandleSensor(TcpClient sensor)
-        {
-            using (sensor)
-            using (NetworkStream sensorStream = sensor.GetStream())
-            {
-                byte[] buffer = new byte[2048];
-                while (true)
-                {
-                    try
-                    {
-                        int bytesRead = sensorStream.Read(buffer, 0, buffer.Length);
-                        if (bytesRead == 0) break;
-
-                        string rawData = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        ProcessData(rawData, sensorStream);
-                    }
-                    catch(Exception ex) {
-                        Console.WriteLine($"Falha ao processar os dados no Sensor {ex.Message}");
-                        break;
-                    }
-                }
-            }
-        }
-
-        private static void ProcessData(string data, NetworkStream sensorStream)
-        {
-            byte[] okRes = Encoding.UTF8.GetBytes("Res:Ok");
-            var fields = ParseMessageFields(data);
-
-            if (data.Contains("OP:REG"))
-            {
-                string sensorId = fields.GetValueOrDefault("ID", string.Empty);
-                string typesField = fields.GetValueOrDefault("TYPES", string.Empty).Trim('[', ']');
-                string zone = fields.GetValueOrDefault("ZONE", string.Empty);
-                string[] types = typesField
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(value => value.Trim())
-                    .Where(value => !string.IsNullOrEmpty(value))
-                    .ToArray();
-
-                // Validar no CSV de configuração
-                if (ValidarSensorAtivo(sensorId))
-                {
-                    _sensorDataTypes[sensorId] = types;
-                    Console.WriteLine($"[REG] Sensor '{sensorId}' registado com sucesso com tipos: [{string.Join(",", types)}].");
-                    AtualizarLastSyncNoCSV(sensorId);
+                    GatewayInstance gtw = new GatewayInstance(id, types);
+                    Thread t = new Thread(gtw.Run);
+                    t.IsBackground = true;
+                    t.Start();
+                    Console.WriteLine($"[OK] Gateway {id} criado e a executar numa Thread (Subscrições: {string.Join(",", types)}).");
                 }
                 else
                 {
-                    Console.WriteLine($"[REG] Sensor '{sensorId}' não está ativo na configuração. Ignorado.");
+                    Console.WriteLine("[ERRO] Formato inválido. Use: <ID> <TIPO1,TIPO2> (Ex: 102 TEMP)");
                 }
-
-                sensorStream.Write(okRes, 0, okRes.Length);
-            }
-            else if (data.Contains("OP:DATA"))
-            {
-                string sensorId = fields.GetValueOrDefault("ID", string.Empty);
-                string type = fields.GetValueOrDefault("TYPE", string.Empty);
-                if (_sensorDataTypes.TryGetValue(sensorId, out var allowedTypes) && allowedTypes.Contains(type))
-                {
-                    string msgParaServidor = $"GTW_ID:GTW01 | {data.Replace("OP:DATA | ", "")}";
-                    EnviarParaServidor(msgParaServidor);
-                }
-                else
-                {
-                    Console.WriteLine($"[ERRO] Dado inválido do sensor '{sensorId}' para tipo '{type}'. Ignorado.");
-                }
-
-                sensorStream.Write(okRes, 0, okRes.Length);
             }
         }
 
-        private static void EnviarParaServidor(string msg)
+        public static void CarregarConfiguracaoSensores()
         {
-            lock (_queueLock)
+            if (!File.Exists(ConfigPath))
             {
-                _serverMessage.Enqueue(msg);
-            }
-        }
-
-        private static void EnviarBatchParaServidor()
-        {
-            List<string> msgs = new List<string>();
-            lock (_queueLock)
-            {
-                while (_serverMessage.Count > 0) { msgs.Add(_serverMessage.Dequeue()); }
-            }
-            if (msgs.Count > 0) 
-            {
-                    try
-                    {
-                        string pacote = string.Join("\n", msgs);
-                        byte[] data = Encoding.UTF8.GetBytes(pacote);
-                        _serverStream.Write(data, 0, data.Length);
-                        Console.WriteLine($"[BATCH] {msgs.Count} mensagens enviadas para o servidor");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[ERRO] Falha ao enviar mensagem para o Servidor");
-                        lock (_queueLock)
-                        {
-                            foreach (var msg in msgs)
-                            {
-                                _serverMessage.Enqueue(msg);
-                            }
-                        }
-                    }
-            }
-
-        }
-        private static void CarregarConfiguracaoSensores()
-        {
-            if (!File.Exists(_configPath))
-            {
-                Console.WriteLine($"[AVISO] Ficheiro de configuração '{_configPath}' não encontrado. Criando com exemplo...");
-                CriarFicheiroConfiguracao();
+                Console.WriteLine($"[AVISO] Ficheiro de configuração '{ConfigPath}' não encontrado.");
                 return;
             }
 
             try
             {
-                foreach (var linha in File.ReadLines(_configPath))
+                foreach (var linha in File.ReadLines(ConfigPath))
                 {
-                    if (string.IsNullOrWhiteSpace(linha) || linha.StartsWith("#"))
-                        continue;
+                    if (string.IsNullOrWhiteSpace(linha) || linha.StartsWith("#")) continue;
 
                     var partes = linha.Split(':');
-                    if (partes.Length >= 5)
+                    if (partes.Length >= 4)
                     {
                         string sensorId = partes[0].Trim();
                         string estado = partes[1].Trim();
                         string zona = partes[2].Trim();
                         string tiposRaw = partes[3].Trim().Trim('[', ']');
-                        string lastSync = partes[4].Trim();
+                        string[] tipos = tiposRaw.Split(',').Select(t => t.Trim()).ToArray();
 
-                        string[] tipos = tiposRaw
-                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(t => t.Trim())
-                            .ToArray();
-
-                        _sensorStatus[sensorId] = estado;
-                        _sensorZone[sensorId] = zona;
-                        _sensorDataTypes[sensorId] = tipos;
-
-                        Console.WriteLine($"[CONF] Sensor {sensorId}: {estado} | Zona: {zona} | Tipos: [{string.Join(",", tipos)}]");
+                        SensorStatus[sensorId] = estado;
+                        SensorZone[sensorId] = zona;
+                        SensorDataTypes[sensorId] = tipos;
                     }
                 }
                 Console.WriteLine($"[OK] Configuração carregada com sucesso.");
@@ -231,69 +89,38 @@ namespace Gateway
             }
         }
 
-        private static void CriarFicheiroConfiguracao()
+        public static bool ValidarSensorAtivo(string sensorId)
         {
-            string conteudo = @"
-S101:ativo:ZONA_CENTRO:[TEMP,HUM,RUIDO]:2026-04-14T00:00:00
-S102:ativo:ZONA_ESCOLAR:[PM2.5,TEMP]:2026-04-14T00:00:00";
-
-            try
+            if (SensorStatus.TryGetValue(sensorId, out var estado))
             {
-                File.WriteAllText(_configPath, conteudo);
-                Console.WriteLine($"[OK] Ficheiro de configuração criado: {_configPath}");
-                // Recarregar após criar
-                CarregarConfiguracaoSensores();
+                if (estado.Equals("ativo", StringComparison.OrdinalIgnoreCase)) return true;
+                if (estado.Equals("manutenção", StringComparison.OrdinalIgnoreCase)) return false;
+                if (estado.Equals("desativado", StringComparison.OrdinalIgnoreCase)) return false;
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERRO] Falha ao criar ficheiro de configuração: {ex.Message}");
-            }
-        }
-
-        private static bool ValidarSensorAtivo(string sensorId)
-        {
-            if (_sensorStatus.TryGetValue(sensorId, out var estado))
-            {
-                if (estado.Equals("ativo", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-                else if (estado.Equals("manutenção", StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine($"[!] Sensor '{sensorId}' está em manutenção.");
-                    return false;
-                }
-                else if (estado.Equals("desativado", StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine($"[!] Sensor '{sensorId}' está desativado.");
-                    return false;
-                }
-            }
-            Console.WriteLine($"[!] Sensor '{sensorId}' não encontrado na configuração.");
             return false;
         }
 
-        private static void AtualizarLastSyncNoCSV(string sensorId)
+        public static void AtualizarLastSyncNoCSV(string sensorId)
         {
             try
             {
-                var linhas = File.ReadAllLines(_configPath).ToList();
+                var linhas = File.ReadAllLines(ConfigPath).ToList();
                 for (int i = 0; i < linhas.Count; i++)
                 {
                     if (linhas[i].StartsWith(sensorId + ":"))
                     {
-                        var partes = linhas[i].Split(':');
-                        if (partes.Length >= 5)
+                        var partes = linhas[i].Split(new[] { ':' }, 5);
+                        if (partes.Length == 5)
                         {
-                            partes[4] = DateTime.Now.ToString("o");
+                            partes[4] = DateTime.Now.ToString("s"); // Formato ISO 8601 sem timezone para consistência
                             linhas[i] = string.Join(":", partes);
                             break;
                         }
                     }
                 }
-                lock (_csvLock)
+                lock (CsvLock)
                 {
-                    File.WriteAllLines(_configPath, linhas);
+                    File.WriteAllLines(ConfigPath, linhas);
                 }
             }
             catch (Exception ex)
@@ -301,8 +128,136 @@ S102:ativo:ZONA_ESCOLAR:[PM2.5,TEMP]:2026-04-14T00:00:00";
                 Console.WriteLine($"[ERRO] Falha ao atualizar last_sync: {ex.Message}");
             }
         }
+    }
 
-        private static Dictionary<string, string> ParseMessageFields(string data)
+    class GatewayInstance
+    {
+        private string _gatewayId;
+        private string[] _subscribedTypes;
+        private TcpClient _serverClient;
+        private NetworkStream _serverStream;
+        private readonly Queue<string> _serverMessage = new Queue<string>();
+        private readonly object _queueLock = new object();
+        private Timer _batchTimer;
+        private const string EXCHANGE_NAME = "urban_sensors";
+
+        public GatewayInstance(string id, string[] types)
+        {
+            _gatewayId = id;
+            _subscribedTypes = types;
+        }
+
+        public void Run()
+        {
+            ConectarServidor().GetAwaiter().GetResult();
+            ConectarRabbitMQ().GetAwaiter().GetResult();
+            
+            while (true)
+            {
+                Thread.Sleep(1000);
+            }
+        }
+
+        private async Task ConectarServidor()
+        {
+            while (_serverClient == null || !_serverClient.Connected)
+            {
+                try
+                {
+                    _serverClient = new TcpClient("127.0.0.1", 5000);
+                    _serverStream = _serverClient.GetStream();
+                    Console.WriteLine($"[{_gatewayId}] Ligado ao Servidor Central com sucesso!");
+                    _batchTimer = new Timer(_ => EnviarBatchParaServidor(), null, 0, 10000);
+                }
+                catch (SocketException)
+                {
+                    await Task.Delay(3000);
+                }
+            }
+        }
+
+        private async Task ConectarRabbitMQ()
+        {
+            try
+            {
+                var factory = new ConnectionFactory { HostName = "localhost" };
+                var connection = await factory.CreateConnectionAsync();
+                var channel = await connection.CreateChannelAsync();
+
+                await channel.ExchangeDeclareAsync(exchange: EXCHANGE_NAME, type: ExchangeType.Topic);
+
+                var queueDeclareResult = await channel.QueueDeclareAsync(queue: $"{_gatewayId}_queue", durable: true, exclusive: false, autoDelete: false);
+                string queueName = queueDeclareResult.QueueName;
+
+                await channel.QueueBindAsync(queue: queueName, exchange: EXCHANGE_NAME, routingKey: "sensor.registration");
+                
+                foreach (var type in _subscribedTypes)
+                {
+                    await channel.QueueBindAsync(queue: queueName, exchange: EXCHANGE_NAME, routingKey: $"sensor.data.*.{type}");
+                }
+
+                Console.WriteLine($"[{_gatewayId}] Ligado ao RabbitMQ. À espera de mensagens...");
+
+                var consumer = new AsyncEventingBasicConsumer(channel);
+                consumer.ReceivedAsync += async (model, ea) =>
+                {
+                    var body = ea.Body.ToArray();
+                    var message = Encoding.UTF8.GetString(body);
+                    var routingKey = ea.RoutingKey;
+
+                    try
+                    {
+                        ProcessData(message, routingKey);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ERRO {_gatewayId}] {ex.Message}");
+                    }
+
+                    await Task.CompletedTask;
+                };
+
+                await channel.BasicConsumeAsync(queue: queueName, autoAck: true, consumer: consumer);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERRO NO RABBITMQ {_gatewayId}] {ex.Message}");
+            }
+        }
+
+        private void ProcessData(string data, string routingKey)
+        {
+            var fields = ParseMessageFields(data);
+
+            if (routingKey == "sensor.registration" || data.Contains("OP:REG"))
+            {
+                string sensorId = fields.GetValueOrDefault("ID", string.Empty);
+                string typesField = fields.GetValueOrDefault("TYPES", string.Empty).Trim('[', ']');
+                string[] types = typesField.Split(',').Select(value => value.Trim()).ToArray();
+
+                if (GatewayApp.ValidarSensorAtivo(sensorId))
+                {
+                    GatewayApp.SensorDataTypes[sensorId] = types;
+                    GatewayApp.AtualizarLastSyncNoCSV(sensorId);
+                }
+            }
+            else if (routingKey.StartsWith("sensor.data") || data.Contains("OP:DATA"))
+            {
+                string sensorId = fields.GetValueOrDefault("ID", string.Empty);
+                string type = fields.GetValueOrDefault("TYPE", string.Empty);
+                
+                if (GatewayApp.SensorDataTypes.TryGetValue(sensorId, out var allowedTypes) && allowedTypes.Contains(type))
+                {
+                    if (_subscribedTypes.Contains(type))
+                    {
+                        string msgParaServidor = $"GTW_ID:{_gatewayId} | {data.Replace("OP:DATA | ", "")}";
+                        EnviarParaServidor(msgParaServidor);
+                    }
+                }
+            }
+        }
+
+        private Dictionary<string, string> ParseMessageFields(string data)
         {
             var fields = new Dictionary<string, string>();
             var parts = data.Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -318,6 +273,40 @@ S102:ativo:ZONA_ESCOLAR:[PM2.5,TEMP]:2026-04-14T00:00:00";
                 }
             }
             return fields;
+        }
+
+        private void EnviarParaServidor(string msg)
+        {
+            lock (_queueLock)
+            {
+                _serverMessage.Enqueue(msg);
+            }
+        }
+
+        private void EnviarBatchParaServidor()
+        {
+            List<string> msgs = new List<string>();
+            lock (_queueLock)
+            {
+                while (_serverMessage.Count > 0) { msgs.Add(_serverMessage.Dequeue()); }
+            }
+            if (msgs.Count > 0 && _serverClient != null && _serverClient.Connected)
+            {
+                try
+                {
+                    string pacote = string.Join("\n", msgs);
+                    byte[] data = Encoding.UTF8.GetBytes(pacote);
+                    _serverStream.Write(data, 0, data.Length);
+                    Console.WriteLine($"[{_gatewayId}] BATCH de {msgs.Count} mensagens enviadas.");
+                }
+                catch
+                {
+                    lock (_queueLock)
+                    {
+                        foreach (var msg in msgs) _serverMessage.Enqueue(msg);
+                    }
+                }
+            }
         }
     }
 }
