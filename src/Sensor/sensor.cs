@@ -125,7 +125,7 @@ namespace Sensor
             _rng = new Random();
         }
 
-        public void Run()
+        public async Task Run()
         {
             InitializeRabbitMQ().GetAwaiter().GetResult();
             RegistarNoGateway().GetAwaiter().GetResult();
@@ -144,7 +144,7 @@ namespace Sensor
                     string dataMsg = $"OP:DATA | ID:{_sensorId} | ZONE:{_zone} | TYPE:{type} | VAL:{value:F1} | TS:{DateTime.Now:s}";
 
                     string routingKey = $"sensor.data.{_zone}.{type}";
-                    EnviarMensagem(routingKey, dataMsg).GetAwaiter().GetResult();
+                    await EnviarMensagem(routingKey, dataMsg).GetAwaiter().GetResult();
                     
                     Console.WriteLine($"[DADOS {_sensorId}] {type} = {value:F1} -> {routingKey}");
                 }
@@ -176,12 +176,12 @@ namespace Sensor
             }
         }
 
-        private void EnviarHeartbeatLoop()
+        private async Task EnviarHeartbeatLoop()
         {
             while (true)
             {
                 string hbMsg = $"OP:HB | ID:{_sensorId} | TS:{DateTime.Now:s}";
-                EnviarMensagem("sensor.heartbeat", hbMsg).GetAwaiter().GetResult();
+                await EnviarMensagem("sensor.heartbeat", hbMsg).GetAwaiter().GetResult();
                 Thread.Sleep(10000);
             }
         }
