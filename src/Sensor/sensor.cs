@@ -40,7 +40,7 @@ namespace Sensor
                 if (_configuredSensors.TryGetValue(fullId, out var sensorInfo))
                 {
                     SensorInstance sensor = new SensorInstance(fullId, sensorInfo.Zone, sensorInfo.Types, _connection, EXCHANGE_NAME);
-                    Thread t = new Thread(sensor.Run);
+                    Thread t = new Thread((sensor.Run()).GetAwaiter().GetResult);
                     t.IsBackground = true;
                     t.Start();
                     Console.WriteLine($"[OK] Sensor {fullId} criado.");
@@ -130,7 +130,7 @@ namespace Sensor
             InitializeRabbitMQ().GetAwaiter().GetResult();
             RegistarNoGateway().GetAwaiter().GetResult();
 
-            Thread hbThread = new Thread(EnviarHeartbeatLoop);
+            Thread hbThread = new Thread(EnviarHeartbeatLoop().GetAwaiter().GetResult);
             hbThread.IsBackground = true;
             hbThread.Start();
 
@@ -144,7 +144,7 @@ namespace Sensor
                     string dataMsg = $"OP:DATA | ID:{_sensorId} | ZONE:{_zone} | TYPE:{type} | VAL:{value:F1} | TS:{DateTime.Now:s}";
 
                     string routingKey = $"sensor.data.{_zone}.{type}";
-                    await EnviarMensagem(routingKey, dataMsg).GetAwaiter().GetResult();
+                    await EnviarMensagem(routingKey, dataMsg);
                     
                     Console.WriteLine($"[DADOS {_sensorId}] {type} = {value:F1} -> {routingKey}");
                 }
@@ -181,7 +181,7 @@ namespace Sensor
             while (true)
             {
                 string hbMsg = $"OP:HB | ID:{_sensorId} | TS:{DateTime.Now:s}";
-                await EnviarMensagem("sensor.heartbeat", hbMsg).GetAwaiter().GetResult();
+                await EnviarMensagem("sensor.heartbeat", hbMsg);
                 Thread.Sleep(10000);
             }
         }
