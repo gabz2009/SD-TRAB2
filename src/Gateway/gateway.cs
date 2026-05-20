@@ -18,7 +18,7 @@ namespace Gateway
         public static Dictionary<string, string[]> SensorDataTypes = new Dictionary<string, string[]>();
         public static Dictionary<string, string> SensorStatus = new Dictionary<string, string>();
         public static Dictionary<string, string> SensorZone = new Dictionary<string, string>();
-        public static string ConfigPath = "sensores_config.csv";
+        public static string ConfigPath = "src\\Gateway\\sensores_config.csv";
         public static readonly object CsvLock = new object();
 
         static async Task Main(string[] args)
