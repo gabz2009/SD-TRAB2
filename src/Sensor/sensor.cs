@@ -16,7 +16,7 @@ namespace Sensor
         public double Precipitacao { get; set; }
         public double Pressao { get; set; }
         public double Temperatura { get; set; }
-        public double Umidade { get; set; }
+        public double Humidade { get; set; }
         public double Vento { get; set; }
     }
 
@@ -94,7 +94,7 @@ namespace Sensor
                             Precipitacao = precip,
                             Pressao = pres,
                             Temperatura = temp,
-                            Umidade = hum,
+                            Humidade = hum,
                             Vento = vent
                         });
                     }
@@ -199,7 +199,7 @@ namespace Sensor
                             case "PRECIPITACAO": value = record.Precipitacao; break;
                             case "PRESSAO": value = record.Pressao; break;
                             case "TEMPERATURA": value = record.Temperatura; break;
-                            case "UMIDADE": value = record.Umidade; break;
+                            case "HUMIDADE": value = record.Humidade; break;
                             case "VENTO": value = record.Vento; break;
                         }
 
