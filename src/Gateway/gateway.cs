@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Grpc.Net.Client;
+using Gateway.Grpc;
 
 namespace Gateway
 {
@@ -145,6 +147,8 @@ namespace Gateway
         private IConnection? _connection;
         private IChannel? _channel;
         private const string EXCHANGE_NAME = "urban_sensors";
+        private GrpcChannel? _grpcChannel;
+        private DataPreprocessor.DataPreprocessorClient? _preprocessorClient;
 
         public GatewayInstance(string id, string[] types)
         {
@@ -154,6 +158,9 @@ namespace Gateway
 
         public async Task Run()
         {
+            _grpcChannel = GrpcChannel.ForAddress("http://localhost:50051");
+            _preprocessorClient = new DataPreprocessor.DataPreprocessorClient(_grpcChannel);
+
             _ = Task.Run(ConectarServidor);
             await ConectarRabbitMQ();
             
@@ -212,7 +219,7 @@ namespace Gateway
 
                     try
                     {
-                        ProcessData(message, routingKey);
+                        await ProcessDataAsync(message, routingKey);
                     }
                     catch (Exception ex)
                     {
@@ -230,7 +237,7 @@ namespace Gateway
             }
         }
 
-        private void ProcessData(string data, string routingKey)
+        private async Task ProcessDataAsync(string data, string routingKey)
         {
             var fields = ParseMessageFields(data);
 
@@ -255,9 +262,44 @@ namespace Gateway
                 {
                     if (_subscribedTypes.Contains(type))
                     {
-                        string msgParaServidor = $"GTW_ID:{_gatewayId} | {data.Replace("OP:DATA | ", "")}";
-                        Console.WriteLine($"[{_gatewayId}] Dados consumidos com sucesso do {sensorId} ({type})");
-                        EnviarParaServidor(msgParaServidor);
+                        double val = 0;
+                        if (double.TryParse(fields.GetValueOrDefault("VAL", "0").Replace(",", "."), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedVal))
+                        {
+                            val = parsedVal;
+                        }
+                        
+                        string dataDate = fields.GetValueOrDefault("DATA", string.Empty);
+                        string dataTime = fields.GetValueOrDefault("HORA", string.Empty);
+
+                        if (_preprocessorClient != null)
+                        {
+                            try
+                            {
+                                var reply = await _preprocessorClient.ProcessDataAsync(new ProcessRequest
+                                {
+                                    SensorId = sensorId,
+                                    DataType = type,
+                                    Value = val,
+                                    DataDate = dataDate,
+                                    DataTime = dataTime
+                                });
+
+                                if (reply.IsValid)
+                                {
+                                    string msgParaServidor = $"GTW_ID:{_gatewayId} | ID:{sensorId} | ZONE:{fields.GetValueOrDefault("ZONE", "")} | TYPE:{type} | VAL:{reply.ProcessedValue:F1} | TS:{reply.ProcessedDate}T{dataTime}";
+                                    Console.WriteLine($"[{_gatewayId}] Dados do {sensorId} ({type}) consumidos e validados via gRPC (Valor: {reply.ProcessedValue:F1}).");
+                                    EnviarParaServidor(msgParaServidor);
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"[{_gatewayId}] Dados rejeitados pelo Pré-Processamento gRPC: {sensorId} ({type}) - Valor {val} considerado outlier.");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[{_gatewayId}] Erro ao comunicar com gRPC (Pré-processamento): {ex.Message}");
+                            }
+                        }
                     }
                 }
                 else

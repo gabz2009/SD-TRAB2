@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option csharp_namespace = "Gateway.Grpc";
+
+package preprocessing;
+
+service DataPreprocessor {
+  rpc ProcessData (ProcessRequest) returns (ProcessReply);
+}
+
+message ProcessRequest {
+  string sensor_id = 1;
+  string data_type = 2;
+  double value = 3;
+  string data_date = 4;
+  string data_time = 5;
+}
+
+message ProcessReply {
+  bool is_valid = 1;
+  double processed_value = 2;
+  string processed_date = 3;
+}
