@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Grpc.Net.Client;
+using Gateway.Grpc;
 
 namespace Gateway
 {
@@ -18,11 +20,14 @@ namespace Gateway
         public static Dictionary<string, string[]> SensorDataTypes = new Dictionary<string, string[]>();
         public static Dictionary<string, string> SensorStatus = new Dictionary<string, string>();
         public static Dictionary<string, string> SensorZone = new Dictionary<string, string>();
-        public static string ConfigPath = "src\\Gateway\\sensores_config.csv";
+        public static string ConfigPath = File.Exists("sensores_config.csv") ? "sensores_config.csv" :
+                                          File.Exists(Path.Combine("src", "Gateway", "sensores_config.csv")) ? Path.Combine("src", "Gateway", "sensores_config.csv") :
+                                          Path.Combine("..", "Gateway", "sensores_config.csv");
         public static readonly object CsvLock = new object();
 
         static async Task Main(string[] args)
         {
+            await Task.Yield(); // Fix CS1998
             Console.Title = "GERENCIADOR DE GATEWAYS";
             CarregarConfiguracaoSensores();
 
@@ -30,7 +35,7 @@ namespace Gateway
 
             while (true)
             {
-                string input = Console.ReadLine()?.Trim();
+                string? input = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(input)) continue;
                 if (input.ToLower() == "sair") break;
 
@@ -41,7 +46,7 @@ namespace Gateway
                     string[] types = parts[1].Split(',').Select(t => t.Trim().ToUpper()).ToArray();
 
                     GatewayInstance gtw = new GatewayInstance(id, types);
-                    Thread t = new Thread(gtw.Run);
+                    Thread t = new Thread(() => gtw.Run().GetAwaiter().GetResult());
                     t.IsBackground = true;
                     t.Start();
                     Console.WriteLine($"[OK] Gateway {id} criado e a executar numa Thread (Subscrições: {string.Join(",", types)}).");
@@ -134,12 +139,16 @@ namespace Gateway
     {
         private string _gatewayId;
         private string[] _subscribedTypes;
-        private TcpClient _serverClient;
-        private NetworkStream _serverStream;
+        private TcpClient? _serverClient;
+        private NetworkStream? _serverStream;
         private readonly Queue<string> _serverMessage = new Queue<string>();
         private readonly object _queueLock = new object();
-        private Timer _batchTimer;
+        private Timer? _batchTimer;
+        private IConnection? _connection;
+        private IChannel? _channel;
         private const string EXCHANGE_NAME = "urban_sensors";
+        private GrpcChannel? _grpcChannel;
+        private DataPreprocessor.DataPreprocessorClient? _preprocessorClient;
 
         public GatewayInstance(string id, string[] types)
         {
@@ -147,10 +156,13 @@ namespace Gateway
             _subscribedTypes = types;
         }
 
-        public void Run()
+        public async Task Run()
         {
-            ConectarServidor().GetAwaiter().GetResult();
-            ConectarRabbitMQ().GetAwaiter().GetResult();
+            _grpcChannel = GrpcChannel.ForAddress("http://localhost:50051");
+            _preprocessorClient = new DataPreprocessor.DataPreprocessorClient(_grpcChannel);
+
+            _ = Task.Run(ConectarServidor);
+            await ConectarRabbitMQ();
             
             while (true)
             {
@@ -181,24 +193,24 @@ namespace Gateway
             try
             {
                 var factory = new ConnectionFactory { HostName = "localhost" };
-                var connection = await factory.CreateConnectionAsync();
-                var channel = await connection.CreateChannelAsync();
+                _connection = await factory.CreateConnectionAsync();
+                _channel = await _connection.CreateChannelAsync();
 
-                await channel.ExchangeDeclareAsync(exchange: EXCHANGE_NAME, type: ExchangeType.Topic);
+                await _channel.ExchangeDeclareAsync(exchange: EXCHANGE_NAME, type: ExchangeType.Topic);
 
-                var queueDeclareResult = await channel.QueueDeclareAsync(queue: $"{_gatewayId}_queue", durable: true, exclusive: false, autoDelete: false);
+                var queueDeclareResult = await _channel.QueueDeclareAsync(queue: $"{_gatewayId}_queue", durable: true, exclusive: false, autoDelete: false);
                 string queueName = queueDeclareResult.QueueName;
 
-                await channel.QueueBindAsync(queue: queueName, exchange: EXCHANGE_NAME, routingKey: "sensor.registration");
+                await _channel.QueueBindAsync(queue: queueName, exchange: EXCHANGE_NAME, routingKey: "sensor.registration");
                 
                 foreach (var type in _subscribedTypes)
                 {
-                    await channel.QueueBindAsync(queue: queueName, exchange: EXCHANGE_NAME, routingKey: $"sensor.data.*.{type}");
+                    await _channel.QueueBindAsync(queue: queueName, exchange: EXCHANGE_NAME, routingKey: $"sensor.data.*.{type}");
                 }
 
                 Console.WriteLine($"[{_gatewayId}] Ligado ao RabbitMQ. À espera de mensagens...");
 
-                var consumer = new AsyncEventingBasicConsumer(channel);
+                var consumer = new AsyncEventingBasicConsumer(_channel);
                 consumer.ReceivedAsync += async (model, ea) =>
                 {
                     var body = ea.Body.ToArray();
@@ -207,7 +219,7 @@ namespace Gateway
 
                     try
                     {
-                        ProcessData(message, routingKey);
+                        await ProcessDataAsync(message, routingKey);
                     }
                     catch (Exception ex)
                     {
@@ -217,7 +229,7 @@ namespace Gateway
                     await Task.CompletedTask;
                 };
 
-                await channel.BasicConsumeAsync(queue: queueName, autoAck: true, consumer: consumer);
+                await _channel.BasicConsumeAsync(queue: queueName, autoAck: true, consumer: consumer);
             }
             catch (Exception ex)
             {
@@ -225,7 +237,7 @@ namespace Gateway
             }
         }
 
-        private void ProcessData(string data, string routingKey)
+        private async Task ProcessDataAsync(string data, string routingKey)
         {
             var fields = ParseMessageFields(data);
 
@@ -250,9 +262,49 @@ namespace Gateway
                 {
                     if (_subscribedTypes.Contains(type))
                     {
-                        string msgParaServidor = $"GTW_ID:{_gatewayId} | {data.Replace("OP:DATA | ", "")}";
-                        EnviarParaServidor(msgParaServidor);
+                        double val = 0;
+                        if (double.TryParse(fields.GetValueOrDefault("VAL", "0").Replace(",", "."), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedVal))
+                        {
+                            val = parsedVal;
+                        }
+                        
+                        string dataDate = fields.GetValueOrDefault("DATA", string.Empty);
+                        string dataTime = fields.GetValueOrDefault("HORA", string.Empty);
+
+                        if (_preprocessorClient != null)
+                        {
+                            try
+                            {
+                                var reply = await _preprocessorClient.ProcessDataAsync(new ProcessRequest
+                                {
+                                    SensorId = sensorId,
+                                    DataType = type,
+                                    Value = val,
+                                    DataDate = dataDate,
+                                    DataTime = dataTime
+                                });
+
+                                if (reply.IsValid)
+                                {
+                                    string msgParaServidor = $"GTW_ID:{_gatewayId} | ID:{sensorId} | ZONE:{fields.GetValueOrDefault("ZONE", "")} | TYPE:{type} | VAL:{reply.ProcessedValue:F1} | TS:{reply.ProcessedDate}T{dataTime}";
+                                    Console.WriteLine($"[{_gatewayId}] Dados do {sensorId} ({type}) consumidos e validados via gRPC (Valor: {reply.ProcessedValue:F1}).");
+                                    EnviarParaServidor(msgParaServidor);
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"[{_gatewayId}] Dados rejeitados pelo Pré-Processamento gRPC: {sensorId} ({type}) - Valor {val} considerado outlier.");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[{_gatewayId}] Erro ao comunicar com gRPC (Pré-processamento): {ex.Message}");
+                            }
+                        }
                     }
+                }
+                else
+                {
+                    Console.WriteLine($"[{_gatewayId}] Dados do {sensorId} ({type}) rejeitados (Sensor não configurado ou tipo não permitido).");
                 }
             }
         }
@@ -296,8 +348,11 @@ namespace Gateway
                 {
                     string pacote = string.Join("\n", msgs);
                     byte[] data = Encoding.UTF8.GetBytes(pacote);
-                    _serverStream.Write(data, 0, data.Length);
-                    Console.WriteLine($"[{_gatewayId}] BATCH de {msgs.Count} mensagens enviadas.");
+                    if (_serverStream != null)
+                    {
+                        _serverStream.Write(data, 0, data.Length);
+                        Console.WriteLine($"[{_gatewayId}] BATCH de {msgs.Count} mensagens enviadas para o Servidor.");
+                    }
                 }
                 catch
                 {

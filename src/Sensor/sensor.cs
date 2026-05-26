@@ -9,11 +9,23 @@ using RabbitMQ.Client;
 
 namespace Sensor
 {
+    public class DatasetRecord
+    {
+        public string Data { get; set; } = "";
+        public string Hora { get; set; } = "";
+        public double Precipitacao { get; set; }
+        public double Pressao { get; set; }
+        public double Temperatura { get; set; }
+        public double Humidade { get; set; }
+        public double Vento { get; set; }
+    }
+
     class SensorApp
     {
-        private static IConnection _connection;
+        private static IConnection? _connection;
         private const string EXCHANGE_NAME = "urban_sensors";
         private static Dictionary<string, (string Zone, string[] Types)> _configuredSensors = new Dictionary<string, (string, string[])>();
+        public static List<DatasetRecord> Dataset = new List<DatasetRecord>();
 
         static async Task Main(string[] args)
         {
@@ -21,6 +33,7 @@ namespace Sensor
             
             await ConectarRabbitMQ();
             LoadConfig();
+            LoadDataset();
             
             Console.WriteLine("Sensores disponíveis na configuração:");
             foreach (var kvp in _configuredSensors)
@@ -32,7 +45,7 @@ namespace Sensor
 
             while (true)
             {
-                string input = Console.ReadLine()?.Trim();
+                string? input = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(input)) continue;
                 if (input.ToLower() == "sair") break;
 
@@ -40,7 +53,7 @@ namespace Sensor
                 if (_configuredSensors.TryGetValue(fullId, out var sensorInfo))
                 {
                     SensorInstance sensor = new SensorInstance(fullId, sensorInfo.Zone, sensorInfo.Types, _connection, EXCHANGE_NAME);
-                    Thread t = new Thread((sensor.Run()).GetAwaiter().GetResult);
+                    Thread t = new Thread(() => sensor.Run().GetAwaiter().GetResult());
                     t.IsBackground = true;
                     t.Start();
                     Console.WriteLine($"[OK] Sensor {fullId} criado.");
@@ -50,6 +63,44 @@ namespace Sensor
                     Console.WriteLine($"[ERRO] Sensor {fullId} não encontrado na configuração.");
                 }
             }
+        }
+
+        private static void LoadDataset()
+        {
+            string datasetPath = Path.Combine("..", "..", "dataset_transformado.csv");
+            if (!File.Exists(datasetPath))
+            {
+                Console.WriteLine($"[ERRO] Ficheiro {datasetPath} não encontrado!");
+                return;
+            }
+
+            var lines = File.ReadAllLines(datasetPath);
+            for (int i = 1; i < lines.Length; i++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                var parts = lines[i].Split(',');
+                if (parts.Length >= 7)
+                {
+                    if (double.TryParse(parts[2], System.Globalization.CultureInfo.InvariantCulture, out double precip) &&
+                        double.TryParse(parts[3], System.Globalization.CultureInfo.InvariantCulture, out double pres) &&
+                        double.TryParse(parts[4], System.Globalization.CultureInfo.InvariantCulture, out double temp) &&
+                        double.TryParse(parts[5], System.Globalization.CultureInfo.InvariantCulture, out double hum) &&
+                        double.TryParse(parts[6], System.Globalization.CultureInfo.InvariantCulture, out double vent))
+                    {
+                        Dataset.Add(new DatasetRecord
+                        {
+                            Data = parts[0],
+                            Hora = parts[1],
+                            Precipitacao = precip,
+                            Pressao = pres,
+                            Temperatura = temp,
+                            Humidade = hum,
+                            Vento = vent
+                        });
+                    }
+                }
+            }
+            Console.WriteLine($"[INFO] Dataset carregado: {Dataset.Count} registos.");
         }
 
         private static void LoadConfig()
@@ -110,12 +161,13 @@ namespace Sensor
         private string _sensorId;
         private string _zone;
         private string[] _supportedTypes;
-        private IConnection _connection;
-        private IChannel _channel;
+        private IConnection? _connection;
+        private IChannel? _channel;
         private string _exchangeName;
         private Random _rng;
+        private int _currentLineIndex;
 
-        public SensorInstance(string id, string zone, string[] types, IConnection connection, string exchangeName)
+        public SensorInstance(string id, string zone, string[] types, IConnection? connection, string exchangeName)
         {
             _sensorId = id;
             _zone = zone;
@@ -123,40 +175,55 @@ namespace Sensor
             _connection = connection;
             _exchangeName = exchangeName;
             _rng = new Random();
+            _currentLineIndex = _rng.Next(0, Math.Max(1, SensorApp.Dataset.Count));
         }
 
         public async Task Run()
         {
-            InitializeRabbitMQ().GetAwaiter().GetResult();
-            RegistarNoGateway().GetAwaiter().GetResult();
+            await InitializeRabbitMQ();
+            await RegistarNoGateway();
 
-            Thread hbThread = new Thread(EnviarHeartbeatLoop().GetAwaiter().GetResult);
-            hbThread.IsBackground = true;
-            hbThread.Start();
+            _ = Task.Run(EnviarHeartbeatLoop);
 
             while (true)
             {
-                var measurements = GerarDadosSensor();
-                foreach (var measurement in measurements)
+                if (SensorApp.Dataset.Count > 0)
                 {
-                    string type = measurement.Key;
-                    double value = measurement.Value;
-                    string dataMsg = $"OP:DATA | ID:{_sensorId} | ZONE:{_zone} | TYPE:{type} | VAL:{value:F1} | TS:{DateTime.Now:s}";
+                    var record = SensorApp.Dataset[_currentLineIndex];
 
-                    string routingKey = $"sensor.data.{_zone}.{type}";
-                    await EnviarMensagem(routingKey, dataMsg);
-                    
-                    Console.WriteLine($"[DADOS {_sensorId}] {type} = {value:F1} -> {routingKey}");
+                    foreach (var type in _supportedTypes)
+                    {
+                        double value = 0;
+                        switch (type)
+                        {
+                            case "PRECIPITACAO": value = record.Precipitacao; break;
+                            case "PRESSAO": value = record.Pressao; break;
+                            case "TEMPERATURA": value = record.Temperatura; break;
+                            case "HUMIDADE": value = record.Humidade; break;
+                            case "VENTO": value = record.Vento; break;
+                        }
+
+                        string dataMsg = $"OP:DATA | ID:{_sensorId} | ZONE:{_zone} | TYPE:{type} | VAL:{value:F1} | DATA:{record.Data} | HORA:{record.Hora}";
+                        string routingKey = $"sensor.data.{_zone}.{type}";
+                        await EnviarMensagem(routingKey, dataMsg);
+
+                        Console.WriteLine($"[DADOS {_sensorId}] {type} = {value:F1} (em {record.Data} {record.Hora}) -> {routingKey}");
+                    }
+
+                    _currentLineIndex = (_currentLineIndex + 1) % SensorApp.Dataset.Count;
                 }
 
-                Thread.Sleep(5000);
+                Thread.Sleep(10000);
             }
         }
 
         private async Task InitializeRabbitMQ()
         {
-            _channel = await _connection.CreateChannelAsync();
-            await _channel.ExchangeDeclareAsync(exchange: _exchangeName, type: ExchangeType.Topic);
+            if (_connection != null)
+            {
+                _channel = await _connection.CreateChannelAsync();
+                await _channel.ExchangeDeclareAsync(exchange: _exchangeName, type: ExchangeType.Topic);
+            }
         }
 
         private async Task RegistarNoGateway()
@@ -184,26 +251,6 @@ namespace Sensor
                 await EnviarMensagem("sensor.heartbeat", hbMsg);
                 Thread.Sleep(10000);
             }
-        }
-
-        private IDictionary<string, double> GerarDadosSensor()
-        {
-            var data = new Dictionary<string, double>();
-            foreach(var type in _supportedTypes)
-            {
-                double value = 0.0;
-                switch(type)
-                {
-                    case "TEMP": value = Math.Round(_rng.NextDouble() * 15 + 15, 1); break;
-                    case "HUM": value = Math.Round(_rng.NextDouble() * 50 + 30, 1); break;
-                    case "RUIDO": value = Math.Round(_rng.NextDouble() * 40 + 40, 1); break;
-                    case "PM2.5": value = Math.Round(_rng.NextDouble() * 50 + 5, 1); break;
-                    case "NO2": value = Math.Round(_rng.NextDouble() * 30 + 10, 1); break;
-                    default: value = Math.Round(_rng.NextDouble() * 100, 1); break;
-                }
-                data.Add(type, value);
-            }
-            return data;
         }
 
         private async Task EnviarMensagem(string routingKey, string msg)

@@ -1,12 +1,19 @@
 {
   "version": 2,
-  "dgSpecHash": "nnSbiXe0wXw=",
+  "dgSpecHash": "9ukXGBny9lPpUf2VXoa3t1DikFnlm7bDGrxy1XPWXuP0cZMjayeegxc00wylv3ExmcEn0MaR39bYpkorTx/ZXQ==",
   "success": true,
-  "projectFilePath": "C:\\Users\\gmend\\Desktop\\SD\\SD2SMUOH\\SD-TRAB2\\src\\Gateway\\Gateway.csproj",
+  "projectFilePath": "/home/silk/Uni/3ano2semestre/SD/RabbitTP2/SD-TRAB2/src/Gateway/Gateway.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\gmend\\.nuget\\packages\\rabbitmq.client\\7.2.1\\rabbitmq.client.7.2.1.nupkg.sha512",
-    "C:\\Users\\gmend\\.nuget\\packages\\system.io.pipelines\\8.0.0\\system.io.pipelines.8.0.0.nupkg.sha512",
-    "C:\\Users\\gmend\\.nuget\\packages\\system.threading.ratelimiting\\8.0.0\\system.threading.ratelimiting.8.0.0.nupkg.sha512"
+    "/home/silk/.nuget/packages/google.protobuf/3.35.0/google.protobuf.3.35.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.core.api/2.80.0/grpc.core.api.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.net.client/2.80.0/grpc.net.client.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.net.common/2.80.0/grpc.net.common.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.tools/2.80.0/grpc.tools.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/microsoft.extensions.dependencyinjection.abstractions/8.0.0/microsoft.extensions.dependencyinjection.abstractions.8.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/microsoft.extensions.logging.abstractions/8.0.0/microsoft.extensions.logging.abstractions.8.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/rabbitmq.client/7.2.1/rabbitmq.client.7.2.1.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.io.pipelines/8.0.0/system.io.pipelines.8.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.threading.ratelimiting/8.0.0/system.threading.ratelimiting.8.0.0.nupkg.sha512"
   ],
   "logs": []
 }

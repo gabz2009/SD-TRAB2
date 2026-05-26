@@ -1,12 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "fBn5Fg91ROk=",
+  "dgSpecHash": "YU9MUEteMlGtrPAYJ8UNM11xOsiH0liyLHpwt4ppBsjlVVzTVI+dSIVDzXM5YPbTn2pG33hObZsxLQIpwP4jzQ==",
   "success": true,
-  "projectFilePath": "C:\\Users\\gmend\\Desktop\\SD\\SD2SMUOH\\SD-TRAB2\\src\\Sensor\\Sensor.csproj",
+  "projectFilePath": "/home/silk/Uni/3ano2semestre/SD/RabbitTP2/SD-TRAB2/src/Sensor/Sensor.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\gmend\\.nuget\\packages\\rabbitmq.client\\7.2.1\\rabbitmq.client.7.2.1.nupkg.sha512",
-    "C:\\Users\\gmend\\.nuget\\packages\\system.io.pipelines\\8.0.0\\system.io.pipelines.8.0.0.nupkg.sha512",
-    "C:\\Users\\gmend\\.nuget\\packages\\system.threading.ratelimiting\\8.0.0\\system.threading.ratelimiting.8.0.0.nupkg.sha512"
+    "/home/silk/.nuget/packages/rabbitmq.client/7.2.1/rabbitmq.client.7.2.1.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.io.pipelines/8.0.0/system.io.pipelines.8.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.threading.ratelimiting/8.0.0/system.threading.ratelimiting.8.0.0.nupkg.sha512"
   ],
   "logs": []
 }
