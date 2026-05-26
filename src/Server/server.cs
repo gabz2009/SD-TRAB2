@@ -6,41 +6,145 @@ using System.Threading;
 using System.IO;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
+using Terminal.Gui;
+using System.Linq;
 
 namespace Server
 {
     class ServerApp
     {
-        private static TcpListener _server;
+        private static TcpListener _server = null!;
         private static bool _isRunning;
+        private static List<string> _logBuffer = new List<string>();
+        private static object _logLock = new object();
 
-        // Mutex para evitar acessos concorrentes simultâneos pesados à BD
         private static Mutex _serverLogMutex = new Mutex();
         private static string _connectionString = "Data Source=servidor.db";
 
+        // UI Elements
+        private static ListView _logListView = null!;
+        private static ListView _dbListView = null!;
+        private static Label _statsLabel = null!;
+        
         static void Main(string[] args)
         {
-            Console.Title = "SERVIDOR PRINCIPAL";
-
             InitializeDatabase();
 
             _server = new TcpListener(IPAddress.Any, 5000);
             _server.Start();
             _isRunning = true;
 
-            Console.WriteLine("[START] Servidor online (Porta 5000) - SQLite Iniciado");
+            LogToConsole("[START] Servidor online (Porta 5000) - SQLite Iniciado");
 
-            // Atendimento Concorrente com Thread principal
             Thread listenerThread = new Thread(AcceptClients);
             listenerThread.IsBackground = true;
             listenerThread.Start();
 
-            Console.WriteLine("Pressione Enter para encerrar o servidor...");
-            Console.ReadLine();
+            // Terminal.Gui Init
+            Application.Init();
+            var top = Application.Top;
+            var window = new Window("Servidor Principal - SensorGrid") {
+                X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill()
+            };
 
+            var tabView = new TabView() {
+                X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill()
+            };
+
+            // Taba Database
+            _dbListView = new ListView(new List<string>()) { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+            tabView.AddTab(new TabView.Tab("Database", _dbListView), true);
+
+            // Taba Logs
+            _logListView = new ListView(_logBuffer) { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+            tabView.AddTab(new TabView.Tab("Logs", _logListView), false);
+
+            // Taba Estatísticas
+            _statsLabel = new Label("A carregar estatísticas...") { X = 1, Y = 1, Width = Dim.Fill(), Height = Dim.Fill() };
+            tabView.AddTab(new TabView.Tab("Estatísticas", _statsLabel), false);
+
+            window.Add(tabView);
+            top.Add(window);
+
+            Application.MainLoop.AddTimeout(TimeSpan.FromSeconds(2), (loop) => {
+                UpdateUI();
+                return true;
+            });
+
+            Application.Run();
+            
             _isRunning = false;
             _server.Stop();
-            Console.WriteLine("[STOP] Servidor offline");
+        }
+
+        private static void UpdateUI()
+        {
+            // Logs
+            lock (_logLock)
+            {
+                _logListView.SetSource(_logBuffer.ToList());
+            }
+
+            // Database
+            var dbLines = new List<string>();
+            dbLines.Add(string.Format("{0,-6} {1,-10} {2,-10} {3,-15} {4,-10} {5,-20}", "ID", "Gateway", "Sensor", "Tipo", "Valor", "Timestamp"));
+            dbLines.Add(new string('-', 80));
+
+            int totalRecords = 0;
+            Dictionary<string, int> countByType = new Dictionary<string, int>();
+
+            _serverLogMutex.WaitOne();
+            try
+            {
+                using (var connection = new SqliteConnection(_connectionString))
+                {
+                    connection.Open();
+                    
+                    // Lemos ultimos 50 para o DB view
+                    using (var command = new SqliteCommand("SELECT Id, GatewayId, SensorId, DataType, DataValue, Timestamp FROM SensorData ORDER BY Id DESC LIMIT 50", connection))
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            dbLines.Add(string.Format("{0,-6} {1,-10} {2,-10} {3,-15} {4,-10:F2} {5,-20}", 
+                                reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetDouble(4), reader.GetString(5)));
+                        }
+                    }
+
+                    // Estatisticas globais
+                    using (var cmdStats = new SqliteCommand("SELECT COUNT(*), DataType FROM SensorData GROUP BY DataType", connection))
+                    using (var reader = cmdStats.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            int count = reader.GetInt32(0);
+                            string type = reader.GetString(1);
+                            countByType[type] = count;
+                            totalRecords += count;
+                        }
+                    }
+                }
+            }
+            catch {}
+            finally
+            {
+                _serverLogMutex.ReleaseMutex();
+            }
+
+            _dbListView.SetSource(dbLines);
+
+            // Estatisticas
+            var statsText = new StringBuilder();
+            statsText.AppendLine($"Total de Registos na Base de Dados: {totalRecords}\n");
+            statsText.AppendLine("Por Tipo de Dado:");
+            foreach (var kvp in countByType)
+            {
+                statsText.AppendLine($"- {kvp.Key}: {kvp.Value}");
+            }
+            statsText.AppendLine($"\nEstado Servidor TCP: {(_isRunning ? "Online" : "Offline")}");
+            _statsLabel.Text = statsText.ToString();
+
+            Application.Top.SetNeedsDisplay();
         }
 
         private static void InitializeDatabase()
@@ -72,8 +176,6 @@ namespace Server
                 try
                 {
                     TcpClient client = _server.AcceptTcpClient();
-
-                    // Nova Thread para cada Gateway que se ligue
                     Thread clientThread = new Thread(() => HandleClientData(client));
                     clientThread.IsBackground = true;
                     clientThread.Start();
@@ -95,15 +197,11 @@ namespace Server
                 {
                     try
                     {
-                        // Leitura síncrona
                         int bytesRead = stream.Read(buffer, 0, buffer.Length);
                         if (bytesRead == 0) break;
 
                         string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        
-                        // Log na consola
-                        LogToConsole($"Recebido:\n{message}");
-                        
+                        LogToConsole($"Recebido: {message.Replace("\n", " | ")}");
                         ProcessarEGuardarMensagem(message);
                     }
                     catch { break; }
@@ -113,9 +211,7 @@ namespace Server
 
         private static void ProcessarEGuardarMensagem(string msg)
         {
-            // Divide a mensagem em linhas (ignora linhas vazias)
             var linhas = msg.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-
             foreach (var linha in linhas)
             {
                 var campos = linha.Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -170,7 +266,7 @@ namespace Server
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERRO DB] Falha ao guardar registo: {ex.Message}");
+                LogToConsole($"[ERRO DB] {ex.Message}");
             }
             finally
             {
@@ -180,7 +276,12 @@ namespace Server
 
         private static void LogToConsole(string message)
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+            string logLine = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            lock (_logLock)
+            {
+                _logBuffer.Add(logLine);
+                if (_logBuffer.Count > 100) _logBuffer.RemoveAt(0);
+            }
         }
     }
 }

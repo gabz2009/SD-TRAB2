@@ -12,22 +12,22 @@ class DataPreprocessorServicer(preprocessing_pb2_grpc.DataPreprocessorServicer):
         processed_value = request.value
         processed_date = request.data_date
 
-        # Basic Outlier Filtering
+        # Bounding Outlier Filtering
         if request.data_type == "TEMPERATURA":
-            if not (-50 <= processed_value <= 60):
-                is_valid = False
-        elif request.data_type == "UMIDADE" or request.data_type == "HUMIDADE":
-            if not (0 <= processed_value <= 100):
-                is_valid = False
+            if processed_value < -50: processed_value = -50
+            elif processed_value > 60: processed_value = 60
+        elif request.data_type in ["UMIDADE", "HUMIDADE"]:
+            if processed_value < 0: processed_value = 0
+            elif processed_value > 100: processed_value = 100
         elif request.data_type == "PRESSAO":
-            if not (800 <= processed_value <= 1200):
-                is_valid = False
+            if processed_value < 800: processed_value = 800
+            elif processed_value > 1200: processed_value = 1200
         elif request.data_type == "VENTO":
-            if not (0 <= processed_value <= 200):
-                is_valid = False
+            if processed_value < 0: processed_value = 0
+            elif processed_value > 200: processed_value = 200
         elif request.data_type == "PRECIPITACAO":
-            if not (0 <= processed_value <= 500):
-                is_valid = False
+            if processed_value < 0: processed_value = 0
+            elif processed_value > 500: processed_value = 500
 
         # Convert Months by extension to numerical if present
         months = {

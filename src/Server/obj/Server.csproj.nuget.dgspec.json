@@ -41,6 +41,10 @@
             "Microsoft.Data.Sqlite": {
               "target": "Package",
               "version": "[10.0.8, )"
+            },
+            "Terminal.Gui": {
+              "target": "Package",
+              "version": "[1.14.0, )"
             }
           },
           "imports": [
