@@ -31,7 +31,7 @@ namespace Gateway
             Console.Title = "GERENCIADOR DE GATEWAYS";
             CarregarConfiguracaoSensores();
 
-            Console.WriteLine("Insira o ID do Gateway e os tipos de dados a subscrever (Ex: 102 TEMP,HUM), ou 'sair' para terminar:");
+            Console.WriteLine("Insira o ID do Gateway e os tipos de dados a subscrever (Ex: 102 TEMPERATURA), ou 'sair' para terminar:");
 
             while (true)
             {
@@ -53,7 +53,7 @@ namespace Gateway
                 }
                 else
                 {
-                    Console.WriteLine("[ERRO] Formato inválido. Use: <ID> <TIPO1,TIPO2> (Ex: 102 TEMP)");
+                    Console.WriteLine("[ERRO] Formato inválido. Use: <ID> <TIPO1,TIPO2> (Ex: 102 HUMIDADE)");
                 }
             }
         }

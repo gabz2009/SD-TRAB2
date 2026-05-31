@@ -41,7 +41,7 @@ namespace Sensor
                 Console.WriteLine($" - {kvp.Key} | Zona: {kvp.Value.Zone} | Tipos: {string.Join(",", kvp.Value.Types)}");
             }
 
-            Console.WriteLine("\nInsira os digitos do ID do sensor que deseja criar (Ex: 101 para S101), ou 'sair' para terminar:");
+            Console.WriteLine("\nInsira os digitos dos IDs dos sensores que deseja criar separados por espaços (Ex: 101 102), ou 'sair' para terminar:");
 
             while (true)
             {
@@ -49,18 +49,23 @@ namespace Sensor
                 if (string.IsNullOrEmpty(input)) continue;
                 if (input.ToLower() == "sair") break;
 
-                string fullId = "S" + input;
-                if (_configuredSensors.TryGetValue(fullId, out var sensorInfo))
+                var ids = input.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                foreach (var id in ids)
                 {
-                    SensorInstance sensor = new SensorInstance(fullId, sensorInfo.Zone, sensorInfo.Types, _connection, EXCHANGE_NAME);
-                    Thread t = new Thread(() => sensor.Run().GetAwaiter().GetResult());
-                    t.IsBackground = true;
-                    t.Start();
-                    Console.WriteLine($"[OK] Sensor {fullId} criado.");
-                }
-                else
-                {
-                    Console.WriteLine($"[ERRO] Sensor {fullId} não encontrado na configuração.");
+                    string fullId = "S" + id;
+                    if (_configuredSensors.TryGetValue(fullId, out var sensorInfo))
+                    {
+                        SensorInstance sensor = new SensorInstance(fullId, sensorInfo.Zone, sensorInfo.Types, _connection, EXCHANGE_NAME);
+                        Thread t = new Thread(() => sensor.Run().GetAwaiter().GetResult());
+                        t.IsBackground = true;
+                        t.Start();
+                        Console.WriteLine($"[OK] Sensor {fullId} criado.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[ERRO] Sensor {fullId} não encontrado na configuração.");
+                    }
                 }
             }
         }
