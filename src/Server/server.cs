@@ -8,7 +8,8 @@ using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
 using Terminal.Gui;
 using System.Linq;
-
+using Grpc.Net.Client;
+using Server.Grpc;
 namespace Server
 {
     class ServerApp
@@ -25,6 +26,13 @@ namespace Server
         private static ListView _logListView = null!;
         private static ListView _dbListView = null!;
         private static Label _statsLabel = null!;
+        private static string _filterSensorId = "";
+        private static string _filterZone = "";
+
+        
+        // Grpc
+        private static GrpcChannel _grpcChannel = null!;
+        private static StatisticsCalculator.StatisticsCalculatorClient _statisticsClient = null!;
         
         static void Main(string[] args)
         {
@@ -33,6 +41,9 @@ namespace Server
             _server = new TcpListener(IPAddress.Any, 5000);
             _server.Start();
             _isRunning = true;
+
+            _grpcChannel = GrpcChannel.ForAddress("http://localhost:50052");
+            _statisticsClient = new StatisticsCalculator.StatisticsCalculatorClient(_grpcChannel);
 
             LogToConsole("[START] Servidor online (Porta 5000) - SQLite Iniciado");
 
@@ -60,8 +71,22 @@ namespace Server
             tabView.AddTab(new TabView.Tab("Logs", _logListView), false);
 
             // Taba Estatísticas
-            _statsLabel = new Label("A carregar estatísticas...") { X = 1, Y = 1, Width = Dim.Fill(), Height = Dim.Fill() };
-            tabView.AddTab(new TabView.Tab("Estatísticas", _statsLabel), false);
+            var statsView = new View() { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+            var lblSensor = new Label("Sensor ID:") { X = 1, Y = 1 };
+            var txtSensor = new TextField("") { X = 15, Y = 1, Width = 20 };
+            var lblZone = new Label("Zona:") { X = 1, Y = 3 };
+            var txtZone = new TextField("") { X = 15, Y = 3, Width = 20 };
+            var btnAnalisar = new Button("Analisar") { X = 1, Y = 5 };
+            
+            btnAnalisar.Clicked += () => {
+                _filterSensorId = txtSensor.Text?.ToString() ?? "";
+                _filterZone = txtZone.Text?.ToString() ?? "";
+            };
+
+            _statsLabel = new Label("A carregar estatísticas...") { X = 1, Y = 7, Width = Dim.Fill(), Height = Dim.Fill() - 7 };
+            
+            statsView.Add(lblSensor, txtSensor, lblZone, txtZone, btnAnalisar, _statsLabel);
+            tabView.AddTab(new TabView.Tab("Estatísticas", statsView), false);
 
             window.Add(tabView);
             top.Add(window);
@@ -110,19 +135,6 @@ namespace Server
                                 reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetDouble(4), reader.GetString(5)));
                         }
                     }
-
-                    // Estatisticas globais
-                    using (var cmdStats = new SqliteCommand("SELECT COUNT(*), DataType FROM SensorData GROUP BY DataType", connection))
-                    using (var reader = cmdStats.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            int count = reader.GetInt32(0);
-                            string type = reader.GetString(1);
-                            countByType[type] = count;
-                            totalRecords += count;
-                        }
-                    }
                 }
             }
             catch {}
@@ -131,16 +143,36 @@ namespace Server
                 _serverLogMutex.ReleaseMutex();
             }
 
-            _dbListView.SetSource(dbLines);
-
-            // Estatisticas
             var statsText = new StringBuilder();
-            statsText.AppendLine($"Total de Registos na Base de Dados: {totalRecords}\n");
-            statsText.AppendLine("Por Tipo de Dado:");
-            foreach (var kvp in countByType)
+            try 
             {
-                statsText.AppendLine($"- {kvp.Key}: {kvp.Value}");
+                var req = new AnalysisRequest { SensorId = _filterSensorId, Zone = _filterZone };
+                var reply = _statisticsClient.GetStatistics(req);
+                totalRecords = reply.TotalRecords;
+                
+                if (!string.IsNullOrEmpty(_filterSensorId) || !string.IsNullOrEmpty(_filterZone)) {
+                    statsText.AppendLine($"Filtro Ativo - Sensor: '{_filterSensorId}' | Zona: '{_filterZone}'");
+                }
+                statsText.AppendLine($"Total de Registos na Base de Dados: {totalRecords}\n");
+                statsText.AppendLine("Estatísticas por Tipo:");
+                foreach (var entry in reply.Entries)
+                {
+                    statsText.AppendLine($"- {entry.DataType}: {entry.Count} registos (Média: {entry.Average:F2})");
+                }
+                
+                if (reply.Alerts.Count > 0) {
+                    statsText.AppendLine("\n*** ALERTAS (Registados na DB) ***");
+                    foreach(var alert in reply.Alerts) {
+                        statsText.AppendLine($"! {alert}");
+                    }
+                }
             }
+            catch (Exception ex)
+            {
+                statsText.AppendLine($"[ERRO gRPC Estatísticas] {ex.Message}");
+            }
+
+            _dbListView.SetSource(dbLines);
             statsText.AppendLine($"\nEstado Servidor TCP: {(_isRunning ? "Online" : "Offline")}");
             _statsLabel.Text = statsText.ToString();
 
