@@ -1,6 +1,7 @@
 import grpc
 from concurrent import futures
 import time
+import json
 
 # Import generated protobuf files
 import preprocessing_pb2
@@ -9,25 +10,67 @@ import preprocessing_pb2_grpc
 class DataPreprocessorServicer(preprocessing_pb2_grpc.DataPreprocessorServicer):
     def ProcessData(self, request, context):
         is_valid = True
-        processed_value = request.value
-        processed_date = request.data_date
+        
+        sensor_id = ""
+        zone = ""
+        data_type = ""
+        val = 0.0
+        data_date = ""
+        data_time = ""
 
-        # Basic Outlier Filtering
-        if request.data_type == "TEMPERATURA":
-            if not (-50 <= processed_value <= 60):
+        if request.payload_format == "CUSTOM":
+            # Parse custom format: ID:X | ZONE:Y | TYPE:Z | VAL:W | DATA:D | HORA:H
+            parts = request.raw_payload.split('|')
+            for part in parts:
+                trimmed = part.strip()
+                if ":" in trimmed:
+                    idx = trimmed.find(':')
+                    key = trimmed[:idx].strip()
+                    value = trimmed[idx+1:].strip()
+                    
+                    if key == "ID": sensor_id = value
+                    elif key == "ZONE": zone = value
+                    elif key == "TYPE": data_type = value
+                    elif key == "VAL":
+                        try:
+                            val = float(value.replace(",", "."))
+                        except ValueError:
+                            val = 0.0
+                    elif key == "DATA": data_date = value
+                    elif key == "HORA": data_time = value
+        elif request.payload_format == "JSON":
+            try:
+                data = json.loads(request.raw_payload)
+                sensor_id = data.get("ID", "")
+                zone = data.get("ZONE", "")
+                data_type = data.get("TYPE", "")
+                val = float(data.get("VAL", 0.0))
+                data_date = data.get("DATA", "")
+                data_time = data.get("HORA", "")
+            except Exception:
                 is_valid = False
-        elif request.data_type == "UMIDADE" or request.data_type == "HUMIDADE":
-            if not (0 <= processed_value <= 100):
-                is_valid = False
-        elif request.data_type == "PRESSAO":
-            if not (800 <= processed_value <= 1200):
-                is_valid = False
-        elif request.data_type == "VENTO":
-            if not (0 <= processed_value <= 200):
-                is_valid = False
-        elif request.data_type == "PRECIPITACAO":
-            if not (0 <= processed_value <= 500):
-                is_valid = False
+
+        processed_value = val
+        processed_date = data_date
+
+        print(f"[PREPROCESSOR] Formato: {request.payload_format} -> Parsed: {data_type} {processed_value}")
+
+        # Bounding Outlier Filtering
+        if data_type == "TEMPERATURA":
+            if processed_value < -50: processed_value = -50
+            elif processed_value > 60: processed_value = 60
+        elif data_type in ["UMIDADE", "HUMIDADE"]:
+            if processed_value < 0: processed_value = 0
+            elif processed_value > 100: processed_value = 100
+        elif data_type == "PRESSAO":
+            if processed_value < 800: processed_value = 800
+            elif processed_value > 1200: processed_value = 1200
+        elif data_type == "VENTO":
+            if processed_value < 0: processed_value = 0
+            elif processed_value > 200: processed_value = 200
+        elif data_type == "PRECIPITACAO":
+            if processed_value < 0: processed_value = 0
+            elif processed_value > 500: processed_value = 500
 
         # Convert Months by extension to numerical if present
         months = {
@@ -40,7 +83,6 @@ class DataPreprocessorServicer(preprocessing_pb2_grpc.DataPreprocessorServicer):
         lower_date = processed_date.lower()
         for month_name, month_num in months.items():
             if month_name in lower_date:
-                # Naive replacement for " de Janeiro de " or similar
                 processed_date = lower_date.replace(f"/{month_name}/", f"-{month_num}-")
                 processed_date = processed_date.replace(f" {month_name} ", f"-{month_num}-")
                 processed_date = processed_date.replace(month_name, month_num)
@@ -48,8 +90,12 @@ class DataPreprocessorServicer(preprocessing_pb2_grpc.DataPreprocessorServicer):
 
         return preprocessing_pb2.ProcessReply(
             is_valid=is_valid,
+            sensor_id=sensor_id,
+            data_type=data_type,
             processed_value=processed_value,
-            processed_date=processed_date
+            processed_date=processed_date,
+            data_time=data_time,
+            zone=zone
         )
 
 def serve():

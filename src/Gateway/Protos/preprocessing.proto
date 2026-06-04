@@ -9,15 +9,16 @@ service DataPreprocessor {
 }
 
 message ProcessRequest {
-  string sensor_id = 1;
-  string data_type = 2;
-  double value = 3;
-  string data_date = 4;
-  string data_time = 5;
+  string raw_payload = 1;
+  string payload_format = 2;
 }
 
 message ProcessReply {
   bool is_valid = 1;
-  double processed_value = 2;
-  string processed_date = 3;
+  string sensor_id = 2;
+  string data_type = 3;
+  double processed_value = 4;
+  string processed_date = 5;
+  string data_time = 6;
+  string zone = 7;
 }

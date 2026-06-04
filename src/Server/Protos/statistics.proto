@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option csharp_namespace = "Server.Grpc";
+
+package statistics;
+
+service StatisticsCalculator {
+  rpc GetStatistics (AnalysisRequest) returns (AnalysisReply);
+}
+
+message AnalysisRequest {
+  string sensor_id = 1;
+  string zone = 2;
+}
+
+message StatisticEntry {
+  string data_type = 1;
+  int32 count = 2;
+  double average = 3;
+}
+
+message AnalysisReply {
+  int32 total_records = 1;
+  repeated StatisticEntry entries = 2;
+  repeated string alerts = 3;
+}

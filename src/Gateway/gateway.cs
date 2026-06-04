@@ -31,7 +31,7 @@ namespace Gateway
             Console.Title = "GERENCIADOR DE GATEWAYS";
             CarregarConfiguracaoSensores();
 
-            Console.WriteLine("Insira o ID do Gateway e os tipos de dados a subscrever (Ex: 102 TEMP,HUM), ou 'sair' para terminar:");
+            Console.WriteLine("Insira o ID do Gateway e os tipos de dados a subscrever (Ex: 102 TEMPERATURA), ou 'sair' para terminar:");
 
             while (true)
             {
@@ -53,7 +53,7 @@ namespace Gateway
                 }
                 else
                 {
-                    Console.WriteLine("[ERRO] Formato inválido. Use: <ID> <TIPO1,TIPO2> (Ex: 102 TEMP)");
+                    Console.WriteLine("[ERRO] Formato inválido. Use: <ID> <TIPO1,TIPO2> (Ex: 102 HUMIDADE)");
                 }
             }
         }
@@ -148,6 +148,7 @@ namespace Gateway
         private IChannel? _channel;
         private const string EXCHANGE_NAME = "urban_sensors";
         private GrpcChannel? _grpcChannel;
+        //stub para preprocessor
         private DataPreprocessor.DataPreprocessorClient? _preprocessorClient;
 
         public GatewayInstance(string id, string[] types)
@@ -159,6 +160,7 @@ namespace Gateway
         public async Task Run()
         {
             _grpcChannel = GrpcChannel.ForAddress("http://localhost:50051");
+            //criar stub para preprocessor
             _preprocessorClient = new DataPreprocessor.DataPreprocessorClient(_grpcChannel);
 
             _ = Task.Run(ConectarServidor);
@@ -262,37 +264,26 @@ namespace Gateway
                 {
                     if (_subscribedTypes.Contains(type))
                     {
-                        double val = 0;
-                        if (double.TryParse(fields.GetValueOrDefault("VAL", "0").Replace(",", "."), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedVal))
-                        {
-                            val = parsedVal;
-                        }
-                        
-                        string dataDate = fields.GetValueOrDefault("DATA", string.Empty);
-                        string dataTime = fields.GetValueOrDefault("HORA", string.Empty);
-
                         if (_preprocessorClient != null)
-                        {
+                        {  
                             try
                             {
+                                //chama o metodo ProcessData do preprocessor
                                 var reply = await _preprocessorClient.ProcessDataAsync(new ProcessRequest
                                 {
-                                    SensorId = sensorId,
-                                    DataType = type,
-                                    Value = val,
-                                    DataDate = dataDate,
-                                    DataTime = dataTime
+                                    RawPayload = data,
+                                    PayloadFormat = "CUSTOM"
                                 });
 
                                 if (reply.IsValid)
                                 {
-                                    string msgParaServidor = $"GTW_ID:{_gatewayId} | ID:{sensorId} | ZONE:{fields.GetValueOrDefault("ZONE", "")} | TYPE:{type} | VAL:{reply.ProcessedValue:F1} | TS:{reply.ProcessedDate}T{dataTime}";
-                                    Console.WriteLine($"[{_gatewayId}] Dados do {sensorId} ({type}) consumidos e validados via gRPC (Valor: {reply.ProcessedValue:F1}).");
+                                    string msgParaServidor = $"GTW_ID:{_gatewayId} | ID:{reply.SensorId} | ZONE:{reply.Zone} | TYPE:{reply.DataType} | VAL:{reply.ProcessedValue:F1} | TS:{reply.ProcessedDate}T{reply.DataTime}";
+                                    Console.WriteLine($"[{_gatewayId}] Dados do {reply.SensorId} ({reply.DataType}) consumidos e validados via gRPC (Valor: {reply.ProcessedValue:F1}).");
                                     EnviarParaServidor(msgParaServidor);
                                 }
                                 else
                                 {
-                                    Console.WriteLine($"[{_gatewayId}] Dados rejeitados pelo Pré-Processamento gRPC: {sensorId} ({type}) - Valor {val} considerado outlier.");
+                                    Console.WriteLine($"[{_gatewayId}] Dados rejeitados pelo Pré-Processamento gRPC: {sensorId} ({type}) - Valor ou formato inválido.");
                                 }
                             }
                             catch (Exception ex)
