@@ -40,6 +40,9 @@ class StatisticsCalculatorServicer(statistics_pb2_grpc.StatisticsCalculatorServi
             if request.zone:
                 query += " AND Zone = ?"
                 params.append(request.zone)
+            if request.date:
+                query += " AND Timestamp LIKE ?"
+                params.append(f"{request.date}%")
                 
             query += " GROUP BY DataType"
             
@@ -70,12 +73,13 @@ class StatisticsCalculatorServicer(statistics_pb2_grpc.StatisticsCalculatorServi
                         alert_msg += f" na Zona {request.zone}"
                     alerts.append(alert_msg)
                     
-                    # Store alert in DB
-                    cursor.execute('''
-                        INSERT INTO AnalysisResults (Timestamp, SensorId, Zone, Alert)
-                        VALUES (?, ?, ?, ?)
-                    ''', (time.strftime("%Y-%m-%dT%H:%M:%S"), request.sensor_id, request.zone, alert_msg))
-                    
+            # Store analysis result in DB regardless of alerts
+            final_alert_text = " | ".join(alerts) if alerts else "Sem alertas detetados"
+            cursor.execute('''
+                INSERT INTO AnalysisResults (Timestamp, SensorId, Zone, Alert)
+                VALUES (?, ?, ?, ?)
+            ''', (time.strftime("%Y-%m-%dT%H:%M:%S"), request.sensor_id, request.zone, final_alert_text))
+            
             conn.commit()
             conn.close()
         except Exception as e:

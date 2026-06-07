@@ -28,6 +28,7 @@ namespace Server
         private static Label _statsLabel = null!;
         private static string _filterSensorId = "";
         private static string _filterZone = "";
+        private static string _filterDate = "";
 
         
         // Grpc
@@ -54,9 +55,17 @@ namespace Server
             // Terminal.Gui Init
             Application.Init();
             var top = Application.Top;
+            
+            var menu = new MenuBar(new MenuBarItem[] {
+                new MenuBarItem("_Opções", new MenuItem[] {
+                    new MenuItem("_Sair", "Terminar Servidor", () => Application.RequestStop())
+                })
+            });
+            
             var window = new Window("Servidor Principal - SensorGrid") {
-                X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill()
+                X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill() - 1
             };
+            top.Add(menu);
 
             var tabView = new TabView() {
                 X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill()
@@ -76,16 +85,19 @@ namespace Server
             var txtSensor = new TextField("") { X = 15, Y = 1, Width = 20 };
             var lblZone = new Label("Zona:") { X = 1, Y = 3 };
             var txtZone = new TextField("") { X = 15, Y = 3, Width = 20 };
-            var btnAnalisar = new Button("Analisar") { X = 1, Y = 5 };
+            var lblDate = new Label("Data (DD-MM-YYYY):") { X = 1, Y = 5 };
+            var txtDate = new TextField("") { X = 20, Y = 5, Width = 15 };
+            var btnAnalisar = new Button("Analisar") { X = 38, Y = 5 };
             
             btnAnalisar.Clicked += () => {
                 _filterSensorId = txtSensor.Text?.ToString() ?? "";
                 _filterZone = txtZone.Text?.ToString() ?? "";
+                _filterDate = txtDate.Text?.ToString() ?? "";
             };
 
             _statsLabel = new Label("A carregar estatísticas...") { X = 1, Y = 7, Width = Dim.Fill(), Height = Dim.Fill() - 7 };
             
-            statsView.Add(lblSensor, txtSensor, lblZone, txtZone, btnAnalisar, _statsLabel);
+            statsView.Add(lblSensor, txtSensor, lblZone, txtZone, lblDate, txtDate, btnAnalisar, _statsLabel);
             tabView.AddTab(new TabView.Tab("Estatísticas", statsView), false);
 
             window.Add(tabView);
@@ -145,13 +157,13 @@ namespace Server
 
             var statsText = new StringBuilder();
             try 
-            {
-                var req = new AnalysisRequest { SensorId = _filterSensorId, Zone = _filterZone };
+            {     
+                var req = new AnalysisRequest { SensorId = _filterSensorId, Zone = _filterZone, Date = _filterDate };
                 var reply = _statisticsClient.GetStatistics(req);
                 totalRecords = reply.TotalRecords;
                 
-                if (!string.IsNullOrEmpty(_filterSensorId) || !string.IsNullOrEmpty(_filterZone)) {
-                    statsText.AppendLine($"Filtro Ativo - Sensor: '{_filterSensorId}' | Zona: '{_filterZone}'");
+                if (!string.IsNullOrEmpty(_filterSensorId) || !string.IsNullOrEmpty(_filterZone) || !string.IsNullOrEmpty(_filterDate)) {
+                    statsText.AppendLine($"Filtro Ativo - Sensor: '{_filterSensorId}' | Zona: '{_filterZone}' | Data: '{_filterDate}'");
                 }
                 statsText.AppendLine($"Total de Registos na Base de Dados: {totalRecords}\n");
                 statsText.AppendLine("Estatísticas por Tipo:");

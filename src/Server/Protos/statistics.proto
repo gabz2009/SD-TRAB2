@@ -11,6 +11,7 @@ service StatisticsCalculator {
 message AnalysisRequest {
   string sensor_id = 1;
   string zone = 2;
+  string date = 3;
 }
 
 message StatisticEntry {
