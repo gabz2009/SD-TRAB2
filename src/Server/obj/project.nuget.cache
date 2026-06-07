@@ -1,16 +1,28 @@
 {
   "version": 2,
-  "dgSpecHash": "DYG4IgAg38TnIv8DZFuJPhnwtJGFYpMjPfYzUKeRTdFlNhFu/eBLzksMLI99Gl1heFyk41ixam4H2bol8E8QQg==",
+  "dgSpecHash": "apkQL8AR+CTYz3QBarmsJxjmdhcqM1POyYFpsiQhX+YBuNvsalBYOtajbpjPZYFzWPemHiBC0QMV8Vb1XdoOkA==",
   "success": true,
   "projectFilePath": "/home/silk/Uni/3ano2semestre/SD/RabbitTP2/SD-TRAB2/src/Server/Server.csproj",
   "expectedPackageFiles": [
+    "/home/silk/.nuget/packages/google.protobuf/3.35.0/google.protobuf.3.35.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.core.api/2.80.0/grpc.core.api.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.net.client/2.80.0/grpc.net.client.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.net.common/2.80.0/grpc.net.common.2.80.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/grpc.tools/2.80.0/grpc.tools.2.80.0.nupkg.sha512",
     "/home/silk/.nuget/packages/microsoft.data.sqlite/10.0.8/microsoft.data.sqlite.10.0.8.nupkg.sha512",
     "/home/silk/.nuget/packages/microsoft.data.sqlite.core/10.0.8/microsoft.data.sqlite.core.10.0.8.nupkg.sha512",
+    "/home/silk/.nuget/packages/microsoft.extensions.dependencyinjection.abstractions/8.0.0/microsoft.extensions.dependencyinjection.abstractions.8.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/microsoft.extensions.logging.abstractions/8.0.0/microsoft.extensions.logging.abstractions.8.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/nstack.core/1.0.7/nstack.core.1.0.7.nupkg.sha512",
     "/home/silk/.nuget/packages/sqlitepclraw.bundle_e_sqlite3/2.1.11/sqlitepclraw.bundle_e_sqlite3.2.1.11.nupkg.sha512",
     "/home/silk/.nuget/packages/sqlitepclraw.core/2.1.11/sqlitepclraw.core.2.1.11.nupkg.sha512",
     "/home/silk/.nuget/packages/sqlitepclraw.lib.e_sqlite3/2.1.11/sqlitepclraw.lib.e_sqlite3.2.1.11.nupkg.sha512",
     "/home/silk/.nuget/packages/sqlitepclraw.provider.e_sqlite3/2.1.11/sqlitepclraw.provider.e_sqlite3.2.1.11.nupkg.sha512",
-    "/home/silk/.nuget/packages/system.memory/4.5.3/system.memory.4.5.3.nupkg.sha512"
+    "/home/silk/.nuget/packages/system.codedom/7.0.0/system.codedom.7.0.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.management/7.0.2/system.management.7.0.2.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.memory/4.5.3/system.memory.4.5.3.nupkg.sha512",
+    "/home/silk/.nuget/packages/system.valuetuple/4.5.0/system.valuetuple.4.5.0.nupkg.sha512",
+    "/home/silk/.nuget/packages/terminal.gui/1.14.0/terminal.gui.1.14.0.nupkg.sha512"
   ],
   "logs": []
 }

@@ -3,4 +3,4 @@ obj/
 src/Gateway/obj/Debug/net8.0/
 src/Server/obj/Debug/net8.0/
 src/Sensor/obj/Debug/net8.0/
-    
+    src/Server/servidor.db

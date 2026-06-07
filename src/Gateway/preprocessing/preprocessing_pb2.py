@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13preprocessing.proto\x12\rpreprocessing\"k\n\x0eProcessRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x11\n\tdata_type\x18\x02 \x01(\t\x12\r\n\x05value\x18\x03 \x01(\x01\x12\x11\n\tdata_date\x18\x04 \x01(\t\x12\x11\n\tdata_time\x18\x05 \x01(\t\"Q\n\x0cProcessReply\x12\x10\n\x08is_valid\x18\x01 \x01(\x08\x12\x17\n\x0fprocessed_value\x18\x02 \x01(\x01\x12\x16\n\x0eprocessed_date\x18\x03 \x01(\t2]\n\x10\x44\x61taPreprocessor\x12I\n\x0bProcessData\x12\x1d.preprocessing.ProcessRequest\x1a\x1b.preprocessing.ProcessReplyB\x0f\xaa\x02\x0cGateway.Grpcb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13preprocessing.proto\x12\rpreprocessing\"=\n\x0eProcessRequest\x12\x13\n\x0braw_payload\x18\x01 \x01(\t\x12\x16\n\x0epayload_format\x18\x02 \x01(\t\"\x98\x01\n\x0cProcessReply\x12\x10\n\x08is_valid\x18\x01 \x01(\x08\x12\x11\n\tsensor_id\x18\x02 \x01(\t\x12\x11\n\tdata_type\x18\x03 \x01(\t\x12\x17\n\x0fprocessed_value\x18\x04 \x01(\x01\x12\x16\n\x0eprocessed_date\x18\x05 \x01(\t\x12\x11\n\tdata_time\x18\x06 \x01(\t\x12\x0c\n\x04zone\x18\x07 \x01(\t2]\n\x10\x44\x61taPreprocessor\x12I\n\x0bProcessData\x12\x1d.preprocessing.ProcessRequest\x1a\x1b.preprocessing.ProcessReplyB\x0f\xaa\x02\x0cGateway.Grpcb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,9 +33,9 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\252\002\014Gateway.Grpc'
   _globals['_PROCESSREQUEST']._serialized_start=38
-  _globals['_PROCESSREQUEST']._serialized_end=145
-  _globals['_PROCESSREPLY']._serialized_start=147
-  _globals['_PROCESSREPLY']._serialized_end=228
-  _globals['_DATAPREPROCESSOR']._serialized_start=230
-  _globals['_DATAPREPROCESSOR']._serialized_end=323
+  _globals['_PROCESSREQUEST']._serialized_end=99
+  _globals['_PROCESSREPLY']._serialized_start=102
+  _globals['_PROCESSREPLY']._serialized_end=254
+  _globals['_DATAPREPROCESSOR']._serialized_start=256
+  _globals['_DATAPREPROCESSOR']._serialized_end=349
 # @@protoc_insertion_point(module_scope)
