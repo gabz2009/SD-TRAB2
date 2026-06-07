@@ -33,6 +33,8 @@ namespace Gateway
 
             Console.WriteLine("Insira o ID do Gateway e os tipos de dados a subscrever (Ex: 102 TEMPERATURA), ou 'sair' para terminar:");
 
+            HashSet<string> activeGateways = new HashSet<string>();
+
             while (true)
             {
                 string? input = Console.ReadLine()?.Trim();
@@ -43,8 +45,15 @@ namespace Gateway
                 if (parts.Length == 2)
                 {
                     string id = "GTW" + parts[0];
+                    if (activeGateways.Contains(id))
+                    {
+                        Console.WriteLine($"[ERRO] O Gateway {id} já está a ser executado!");
+                        continue;
+                    }
+                    
                     string[] types = parts[1].Split(',').Select(t => t.Trim().ToUpper()).ToArray();
 
+                    activeGateways.Add(id);
                     GatewayInstance gtw = new GatewayInstance(id, types);
                     Thread t = new Thread(() => gtw.Run().GetAwaiter().GetResult());
                     t.IsBackground = true;

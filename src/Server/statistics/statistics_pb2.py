@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10statistics.proto\x12\nstatistics\"2\n\x0f\x41nalysisRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x0c\n\x04zone\x18\x02 \x01(\t\"C\n\x0eStatisticEntry\x12\x11\n\tdata_type\x18\x01 \x01(\t\x12\r\n\x05\x63ount\x18\x02 \x01(\x05\x12\x0f\n\x07\x61verage\x18\x03 \x01(\x01\"c\n\rAnalysisReply\x12\x15\n\rtotal_records\x18\x01 \x01(\x05\x12+\n\x07\x65ntries\x18\x02 \x03(\x0b\x32\x1a.statistics.StatisticEntry\x12\x0e\n\x06\x61lerts\x18\x03 \x03(\t2_\n\x14StatisticsCalculator\x12G\n\rGetStatistics\x12\x1b.statistics.AnalysisRequest\x1a\x19.statistics.AnalysisReplyB\x0e\xaa\x02\x0bServer.Grpcb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10statistics.proto\x12\nstatistics\"@\n\x0f\x41nalysisRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x0c\n\x04zone\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61te\x18\x03 \x01(\t\"C\n\x0eStatisticEntry\x12\x11\n\tdata_type\x18\x01 \x01(\t\x12\r\n\x05\x63ount\x18\x02 \x01(\x05\x12\x0f\n\x07\x61verage\x18\x03 \x01(\x01\"c\n\rAnalysisReply\x12\x15\n\rtotal_records\x18\x01 \x01(\x05\x12+\n\x07\x65ntries\x18\x02 \x03(\x0b\x32\x1a.statistics.StatisticEntry\x12\x0e\n\x06\x61lerts\x18\x03 \x03(\t2_\n\x14StatisticsCalculator\x12G\n\rGetStatistics\x12\x1b.statistics.AnalysisRequest\x1a\x19.statistics.AnalysisReplyB\x0e\xaa\x02\x0bServer.Grpcb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,11 +33,11 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\252\002\013Server.Grpc'
   _globals['_ANALYSISREQUEST']._serialized_start=32
-  _globals['_ANALYSISREQUEST']._serialized_end=82
-  _globals['_STATISTICENTRY']._serialized_start=84
-  _globals['_STATISTICENTRY']._serialized_end=151
-  _globals['_ANALYSISREPLY']._serialized_start=153
-  _globals['_ANALYSISREPLY']._serialized_end=252
-  _globals['_STATISTICSCALCULATOR']._serialized_start=254
-  _globals['_STATISTICSCALCULATOR']._serialized_end=349
+  _globals['_ANALYSISREQUEST']._serialized_end=96
+  _globals['_STATISTICENTRY']._serialized_start=98
+  _globals['_STATISTICENTRY']._serialized_end=165
+  _globals['_ANALYSISREPLY']._serialized_start=167
+  _globals['_ANALYSISREPLY']._serialized_end=266
+  _globals['_STATISTICSCALCULATOR']._serialized_start=268
+  _globals['_STATISTICSCALCULATOR']._serialized_end=363
 # @@protoc_insertion_point(module_scope)
